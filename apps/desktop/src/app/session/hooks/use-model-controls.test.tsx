@@ -339,6 +339,47 @@ describe('useModelControls', () => {
     expect(invalidate).toHaveBeenCalled()
   })
 
+  it("writes a committed primary pick into the open chat's own state, which the pill reads", async () => {
+    let sessionState: Record<string, unknown> = {
+      model: 'claude-sonnet-5-5',
+      provider: 'anthropic',
+      reasoningEffortWire: 'high'
+    }
+
+    tile.delegate = {
+      updateSession: (_id: string, update: (state: Record<string, unknown>) => Record<string, unknown>) => {
+        sessionState = update(sessionState)
+      }
+    }
+    $activeSessionId.set('session-1')
+
+    // The canonical gateway's committed answer; no session.info follows it.
+    const requestGateway = vi.fn(
+      async () =>
+        ({
+          execution_generation: 2,
+          model: 'claude-haiku-5-5',
+          ok: true,
+          operation: 'model',
+          provider: 'anthropic',
+          revision: 2,
+          session_id: 'session-1'
+        }) as never
+    )
+
+    let controls!: Controls
+
+    render(<Harness onReady={value => (controls = value)} requestGateway={requestGateway} />)
+
+    try {
+      await expect(controls.selectModel({ model: 'claude-haiku-5-5', provider: 'anthropic' })).resolves.toBe(true)
+    } finally {
+      tile.delegate = null
+    }
+
+    expect(sessionState).toMatchObject({ model: 'claude-haiku-5-5', provider: 'anthropic', reasoningEffortWire: '' })
+  })
+
   it('asks in a dialog before retrying a guarded model switch, then applies the confirmed one', async () => {
     $activeSessionId.set('session-1')
     setCurrentModel('gpt-5.6-sol')

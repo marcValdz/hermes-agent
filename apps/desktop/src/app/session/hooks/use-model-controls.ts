@@ -49,6 +49,8 @@ interface ModelSwitchResponse {
   confirm_message?: string
   confirm_required?: boolean
   deferred?: boolean
+  model?: string
+  provider?: string
 }
 
 export function useModelControls({
@@ -391,6 +393,17 @@ export function useModelControls({
         // the switch publishes session.info when it lands, and that is what
         // re-syncs every surface.
         if (!result?.deferred) {
+          // The pill reads the chat's own state, and a committed pick sends no session.info to update it.
+          if (liveSessionId && result?.model) {
+            const committed = { model: result.model, provider: result.provider || selection.provider }
+
+            sessionTileDelegate()?.updateSession(liveSessionId, state => ({
+              ...state,
+              ...committed,
+              reasoningEffortWire: ''
+            }))
+          }
+
           void queryClient.invalidateQueries({
             queryKey: modelOptionsQueryKey(liveGatewayProfile, liveSessionId, cacheOwnerConnectionId)
           })
