@@ -269,8 +269,18 @@ export function useModelControls({
 
       const readSnapshot = (): ModelPickSnapshot => {
         const tileState = touchesPrimary ? undefined : $sessionStates.get()[liveSessionId!]
+        const primaryState = touchesPrimary && liveSessionId ? $sessionStates.get()[liveSessionId] : undefined
 
         return {
+          ...(primaryState
+            ? {
+                session: {
+                  model: primaryState.model ?? '',
+                  provider: primaryState.provider ?? '',
+                  reasoningEffortWire: primaryState.reasoningEffortWire ?? ''
+                }
+              }
+            : {}),
           composerSelection: getComposerModelSelection(),
           model: touchesPrimary ? $currentModel.get() : (tileState?.model ?? ''),
           provider: touchesPrimary ? $currentProvider.get() : (tileState?.provider ?? ''),
@@ -289,6 +299,18 @@ export function useModelControls({
           setCurrentModel(selection.model)
           setCurrentProvider(selection.provider)
           markComposerSelectionManual()
+
+          // An open chat's pill reads its own state. A busy chat keeps its running model: the pick lands next turn.
+          const primaryState = liveSessionId ? $sessionStates.get()[liveSessionId] : undefined
+
+          if (liveSessionId && primaryState && !primaryState.busy) {
+            sessionTileDelegate()?.updateSession(liveSessionId, state => ({
+              ...state,
+              model: selection.model,
+              provider: selection.provider,
+              reasoningEffortWire: ''
+            }))
+          }
         } else if (liveSessionId) {
           // Optimistic tile paint — session.info will confirm; rollback on error. The wire stamp
           // belongs to the old route, so it is withdrawn until session.info re-stamps it.
@@ -314,6 +336,12 @@ export function useModelControls({
           setCurrentModelTransient(snapshot.model)
           setCurrentProviderTransient(snapshot.provider)
           setCurrentReasoningEffortWire(snapshot.reasoningEffortWire)
+
+          const session = snapshot.session
+
+          if (liveSessionId && session) {
+            sessionTileDelegate()?.updateSession(liveSessionId, state => ({ ...state, ...session }))
+          }
         } else if (liveSessionId) {
           sessionTileDelegate()?.updateSession(liveSessionId, state => ({
             ...state,

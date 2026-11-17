@@ -11,6 +11,8 @@ export interface ModelPickSnapshot {
   model: string
   provider: string
   reasoningEffortWire: string
+  // The primary chat's own state, which its pill reads once the chat exists.
+  session?: { model: string; provider: string; reasoningEffortWire: string }
 }
 
 interface PendingPick {

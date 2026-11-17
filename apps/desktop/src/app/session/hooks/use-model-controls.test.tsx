@@ -380,6 +380,82 @@ describe('useModelControls', () => {
     expect(sessionState).toMatchObject({ model: 'claude-haiku-5-5', provider: 'anthropic', reasoningEffortWire: '' })
   })
 
+  describe('instant paint of the open chat', () => {
+    const openChat = (busy = false) => {
+      SessionStates.$sessionStates.set({
+        'session-1': {
+          busy,
+          model: 'claude-sonnet-5-5',
+          provider: 'anthropic',
+          reasoningEffortWire: 'high'
+        } as never
+      })
+      tile.delegate = {
+        updateSession: (id: string, update: (state: Record<string, unknown>) => Record<string, unknown>) => {
+          const states = SessionStates.$sessionStates.get() as unknown as Record<string, Record<string, unknown>>
+          SessionStates.$sessionStates.set({ ...states, [id]: update(states[id]) } as never)
+        }
+      }
+      $activeSessionId.set('session-1')
+    }
+
+    const chat = () =>
+      (SessionStates.$sessionStates.get() as unknown as Record<string, Record<string, unknown>>)['session-1']
+
+    afterEach(() => {
+      tile.delegate = null
+    })
+
+    it('shows the pick in the open chat before the gateway answers', async () => {
+      openChat()
+      const answer = deferred<unknown>()
+      const requestGateway = vi.fn(() => answer.promise as never)
+      let controls!: Controls
+
+      render(<Harness onReady={value => (controls = value)} requestGateway={requestGateway} />)
+
+      const pick = controls.selectModel({ model: 'claude-haiku-5-5', provider: 'anthropic' })
+
+      expect(chat()).toMatchObject({ model: 'claude-haiku-5-5', provider: 'anthropic', reasoningEffortWire: '' })
+
+      answer.resolve({ model: 'claude-haiku-5-5', ok: true, operation: 'model', provider: 'anthropic' })
+      await expect(pick).resolves.toBe(true)
+      expect(chat()).toMatchObject({ model: 'claude-haiku-5-5' })
+    })
+
+    it('puts the old model back in the open chat when the pick is refused', async () => {
+      openChat()
+
+      const requestGateway = vi.fn(async () => {
+        throw new Error('model_resolution_failed')
+      })
+
+      let controls!: Controls
+
+      render(<Harness onReady={value => (controls = value)} requestGateway={requestGateway} />)
+
+      await expect(controls.selectModel({ model: 'claude-haiku-5-5', provider: 'anthropic' })).resolves.toBe(false)
+      expect(chat()).toMatchObject({ model: 'claude-sonnet-5-5', provider: 'anthropic', reasoningEffortWire: 'high' })
+    })
+
+    it('leaves a busy chat on its running model, since the pick only lands on the next message', async () => {
+      openChat(true)
+      const answer = deferred<unknown>()
+      const requestGateway = vi.fn(() => answer.promise as never)
+      let controls!: Controls
+
+      render(<Harness onReady={value => (controls = value)} requestGateway={requestGateway} />)
+
+      const pick = controls.selectModel({ model: 'claude-haiku-5-5', provider: 'anthropic' })
+
+      expect(chat()).toMatchObject({ model: 'claude-sonnet-5-5' })
+
+      answer.resolve({ deferred: true })
+      await expect(pick).resolves.toBe(true)
+      expect(chat()).toMatchObject({ model: 'claude-sonnet-5-5' })
+    })
+  })
+
   it('asks in a dialog before retrying a guarded model switch, then applies the confirmed one', async () => {
     $activeSessionId.set('session-1')
     setCurrentModel('gpt-5.6-sol')
